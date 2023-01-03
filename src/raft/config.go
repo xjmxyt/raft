@@ -159,14 +159,20 @@ func (cfg *config) checkLogs(i int, m ApplyMsg) (string, bool) {
 // applier reads message from apply ch and checks that they match the log
 // contents
 func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
+	// fmt.Printf("waiting for applyCh\n")
 	for m := range applyCh {
+		// fmt.Printf("read from applyCh\n")
 		if m.CommandValid == false {
 			// ignore other types of ApplyMsg
 		} else {
 			cfg.mu.Lock()
+			// fmt.Printf("checkLogs: server: %v, log index: %v\n", i, m.CommandIndex)
 			err_msg, prevok := cfg.checkLogs(i, m)
 			cfg.mu.Unlock()
 			if m.CommandIndex > 1 && prevok == false {
+				for k, v := range cfg.logs[i]{
+					fmt.Printf("log[%v] is %v\n", k, v)
+				}
 				err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
 			}
 			if err_msg != "" {
@@ -236,6 +242,9 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 				err_msg, prevok = cfg.checkLogs(i, m)
 				cfg.mu.Unlock()
 				if m.CommandIndex > 1 && prevok == false {
+					for k, v := range cfg.logs[i]{
+						fmt.Printf("log[%v] is %v\n", k, v)
+					}
 					err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
 				}
 			}
@@ -381,7 +390,7 @@ func (cfg *config) connect(i int) {
 
 // detach server i from the net.
 func (cfg *config) disconnect(i int) {
-	// fmt.Printf("disconnect(%d)\n", i)
+	fmt.Printf("disconnect(%d)\n", i)
 
 	cfg.connected[i] = false
 
@@ -513,6 +522,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 			count += 1
 			cmd = cmd1
 		}
+		// fmt.Printf("TEST: ind[%v], count[%v]\n", index, count)
 	}
 	return count, cmd
 }
