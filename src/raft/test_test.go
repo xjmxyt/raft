@@ -684,7 +684,6 @@ loop:
 	cfg.end()
 }
 
-/*
 func TestPersist12C(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false, false)
@@ -872,7 +871,7 @@ func TestFigure82C(t *testing.T) {
 
 	cfg.end()
 }
-*/
+
 func TestUnreliableAgree2C(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, true, false)
@@ -1102,7 +1101,6 @@ func internalChurn(t *testing.T, unreliable bool) {
 	cfg.end()
 }
 
-/*
 func TestReliableChurn2C(t *testing.T) {
 	internalChurn(t, false)
 }
@@ -1110,7 +1108,7 @@ func TestReliableChurn2C(t *testing.T) {
 func TestUnreliableChurn2C(t *testing.T) {
 	internalChurn(t, true)
 }
-*/
+
 const MAXLOGSIZE = 2000
 
 func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
