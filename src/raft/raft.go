@@ -18,11 +18,11 @@ package raft
 //
 
 import (
-	//	"bytes"
+	"bytes"
 	"sync"
 	"sync/atomic"
 
-	//	"6.824/labgob"
+	"6.824/labgob"
 	"6.824/labrpc"
 	"log"
 	"math/rand"
@@ -130,6 +130,14 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
+	// log.Printf("S[%v] start to persist: term %v, votedFor %v, log len %v\n",rf.me, rf.currentTerm, rf.votedFor, len(rf.log))   	
 }
 
 
@@ -153,6 +161,20 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var currentTerm int
+	var votedFor int
+	var msglog []ApplyMsg
+	if d.Decode(&currentTerm) != nil || d.Decode(&votedFor) != nil || d.Decode(&msglog) != nil {
+		log.Printf("S[%v]: decode failed", rf.me)
+	} else {
+	  rf.currentTerm = currentTerm
+	  rf.votedFor = votedFor
+	  rf.log = msglog
+	  log.Printf("S[%v] readPersist: term %v, votedFor %v, log len %v\n", rf.me, rf.currentTerm, rf.votedFor, len(rf.log))
+	}
+	
 }
 
 
@@ -216,9 +238,10 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if args.Term == rf.currentTerm && (rf.votedFor == -1 || rf.votedFor==args.CandidateId){
+		log.Printf("s[%v] start to check log(len: %v) when Request Vote", rf.me, len(rf.log))
 		// 2B check log: 只有在candidate的log和receiver的log一样新才会投票
 		// 最开始没有log
-		if args.LastLogIndex == 0 && len(rf.log) == 0{
+		if len(rf.log) == 0{
 			reply.VoteGranted = true
 			rf.votedFor = args.CandidateId
 			rf.heartBeatTimeOut = time.Now().Add(randTime())
@@ -239,6 +262,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.votedFor = -1
 	}
 	reply.Term = rf.currentTerm
+	rf.persist()
 	log.Printf("s[%v] be asked vote to [%v] reply:%v args:%v\n", rf.me, args.CandidateId, reply, args)
 	rf.mu.Unlock()
 }
@@ -258,21 +282,26 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.votedFor = -1
 		reply.Term = rf.currentTerm
 		reply.Success = true
-		// 2B: 日志的处理
-		if args.Entries!=nil { log.Printf("S[%v] handle log, prev index: %v", rf.me, args.PrevLogIndex) }
-	
+		// 2B: 日志的处理	
 		if args.PrevLogIndex == 0 {
 			// 前面没有日志
 			if args.Entries != nil{
 				// 追加未保存的条目
 				for i:=0; i<len(args.Entries); i++{
-					rf.log = append(rf.log, args.Entries[i])
+					if args.Entries[i].CommandIndex > len(rf.log){
+						rf.log = append(rf.log, args.Entries[i])
+					}
 				}
 				log.Printf("S[%v] log len: %v, args.Entries: %v", rf.me, len(rf.log), len(args.Entries))
 				reply.Success = true		
 			}	
 		}else{
 			if len(rf.log) < args.PrevLogIndex || rf.log[args.PrevLogIndex-1].CommandTerm != args.PrevLogTerm{
+				prev_term := 0
+				if len(rf.log) >= args.PrevLogIndex{
+					prev_term = rf.log[args.PrevLogIndex-1].CommandTerm
+				}
+				log.Printf("AppendEntries: S[%v] log len: %v, PrevLog term: %v, args.PrevLogIndex: %v", rf.me, len(rf.log), prev_term, args.PrevLogIndex)
 				reply.Success = false 
 			}else{
 				if args.Entries!=nil && len(args.Entries)!=0 {
@@ -291,10 +320,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 					}
 					if i==len(args.Entries){ i=0 }
 					// 追加未保存的条目
-					log.Printf("S[%v] append log: [%v]->[%v]", rf.me, i, len(args.Entries))
+					log.Printf("S[%v] append log: [%v]->[%v]", rf.me, len(rf.log), len(rf.log)+len(args.Entries)-i)
+					// if len(rf.log) < 10 {log.Printf("S[%v] log: %v", rf.me, rf.log)}
 					for ; i<len(args.Entries); i++{
-						rf.log = append(rf.log, args.Entries[i])
+						// 需要先判断该entry是否在里面，防止网络中无效的请求
+						if args.Entries[i].CommandIndex > len(rf.log){
+							rf.log = append(rf.log, args.Entries[i])
+						}
 					}
+					// if len(rf.log) < 10 { log.Printf("S[%v] entries: %v", rf.me, args.Entries) }
+					// if len(rf.log) < 10 { log.Printf("S[%v] log: %v", rf.me, rf.log) }
 					reply.Success = true
 				}
 			}
@@ -313,6 +348,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		}
 		//2B: end
 	}
+	rf.persist()
 	rf.heartBeatTimeOut = time.Now().Add(randTime())
 	//log.Printf("[%v]->[%v]:s[%v] trans to Follower by L[%v] when receive AppendEntries\n", time.Now(), rf.heartBeatTimeOut, rf.me, args.LeaderId)
 }
@@ -483,6 +519,7 @@ func (rf *Raft) startElection() {
 	rf.cntVoted = 1
 	rf.currentTerm += 1
 	rf.state = STATE_CANDIDATE
+	rf.persist()
 	// 设置选举超时时间
 	electionTimeOut := time.Now().Add(randTime())
 	rf.mu.Unlock()
@@ -523,13 +560,11 @@ func (rf *Raft) startElection() {
 		}else if rf.state == STATE_FOLLOWER{
 			// 成为folloer
 			log.Printf("F[%v] another server is Leader now\n", rf.me)
-			rf.votedFor = -1
 			rf.mu.Unlock()
 			return
 		}else if electionTimeOut.Before(time.Now()){
 			// 超时重新选举
 			log.Printf("C[%v] election time out\n", rf.me)
-			rf.votedFor = -1
 			rf.updateState(STATE_FOLLOWER)
 			rf.mu.Unlock()
 			return 
@@ -570,11 +605,13 @@ func (rf *Raft) checkCommitedLogs(){
 
 // 进行提交
 func (rf *Raft) doCommit(from_ind int, to_ind int){
-	log.Printf("S[%v] commit logs [%v]->[%v]", rf.me, from_ind, to_ind)
+	// log.Printf("S[%v], commit logs [%v]->[%v]: %v", rf.me, from_ind, to_ind, rf.log[from_ind-1: to_ind])
 	for i:=from_ind; i<=to_ind; i++{
 		rf.log[i-1].CommandValid = true 
 		rf.applyCh <- rf.log[i-1]
 	}
+	log.Printf("S[%v] commit logs [%v]->[%v]", rf.me, from_ind, to_ind)
+	rf.persist()
 }
 
 // 并行向所有peer收集选票
@@ -615,6 +652,7 @@ func (rf *Raft) collectVotes() {
 			}else{
 				log.Printf("Send request vote from %d to %d error", rf.me, server)
 			}
+			rf.persist()
 			wg.Done()
 		}(i, args)		
 	}
@@ -648,7 +686,7 @@ func (rf *Raft)sendHeartBeats(){
 		reply := AppendEntriesReply{}
 		if rf.debugLevel==1 { log.Printf("go func: sendHeartBeat:[%v]->[%v]", rf.me, server) }
 		if rf.sendAppendEntries(server, args, &reply){
-			if rf.debugLevel==1 {
+			if rf.debugLevel==1 && len(args.Entries) < 10 && len(args.Entries)>0{
 				log.Printf("s[%v] sendHeartBeat to [%v] reply:%v args:%v\n", rf.me, server, reply, args)
 			}
 			rf.mu.Lock()
@@ -675,9 +713,10 @@ func (rf *Raft)sendHeartBeats(){
 				}
 			}
 		}else{
-			// log.Printf("F[%v] Send request heartbeat fail", rf.me)
+			// log.Printf("F[%v] Send request heartbeat fail: [%v]->[%v]", rf.me, rf.me, server)
 			return false
 		}
+		rf.persist()
 		return reply.Success
 	}
 	
@@ -689,6 +728,7 @@ func (rf *Raft)sendHeartBeats(){
 				log.Printf("F[%v] is not a leader now!\n", rf.me)
 				rf.mu.Unlock()
 				rf.votedFor = -1
+				rf.persist()
 				return 
 			}else {
 				// 遍历peer

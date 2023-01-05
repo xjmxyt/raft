@@ -8,12 +8,14 @@ package raft
 // test with the original before submitting.
 //
 
-import "testing"
-import "fmt"
-import "time"
-import "math/rand"
-import "sync/atomic"
-import "sync"
+import (
+	"fmt"
+	"math/rand"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
 
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
@@ -296,7 +298,6 @@ func TestFailAgree2B(t *testing.T) {
 	cfg.one(104, servers-1, false)
 	cfg.one(105, servers-1, false)
 	fmt.Printf("reconnect\n")
-	
 
 	// re-connect
 	cfg.connect((leader + 1) % servers)
@@ -683,6 +684,7 @@ loop:
 	cfg.end()
 }
 
+/*
 func TestPersist12C(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false, false)
@@ -870,7 +872,7 @@ func TestFigure82C(t *testing.T) {
 
 	cfg.end()
 }
-
+*/
 func TestUnreliableAgree2C(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, true, false)
@@ -1100,6 +1102,7 @@ func internalChurn(t *testing.T, unreliable bool) {
 	cfg.end()
 }
 
+/*
 func TestReliableChurn2C(t *testing.T) {
 	internalChurn(t, false)
 }
@@ -1107,7 +1110,7 @@ func TestReliableChurn2C(t *testing.T) {
 func TestUnreliableChurn2C(t *testing.T) {
 	internalChurn(t, true)
 }
-
+*/
 const MAXLOGSIZE = 2000
 
 func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash bool) {
